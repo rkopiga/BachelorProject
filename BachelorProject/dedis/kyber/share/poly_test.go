@@ -12,6 +12,7 @@ func TestSecretRecovery(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 	poly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	//shares := poly.Shares(n)
 	polyh := NewPriPoly(g,t,nil)
 	polyg, errAdd := poly.Add(polyh)
 	if errAdd != nil{
@@ -19,8 +20,6 @@ func TestSecretRecovery(test *testing.T) {
 	}
 
 	sharesNewPoly := polyg.Shares(n)
-	//shares := poly.Shares(n)
-
 
 	recovered, err := RecoverSecret(g, sharesNewPoly, t, n) //A changer shares
 	if err != nil {
@@ -32,25 +31,34 @@ func TestSecretRecovery(test *testing.T) {
 	}
 }
 
+
 func TestSecretRecoveryDelete(test *testing.T) {
 	g := edwards25519.NewBlakeSHA256Ed25519()
 	n := 10
 	t := n/2 + 1
-	poly := NewPriPoly(g, t, nil)
-	shares := poly.Shares(n)
+	poly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	polyh := NewPriPoly(g,t,nil)
+	polyg, errAdd := poly.Add(polyh)
+
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
+
+	//shares := poly.Shares(n)
+	sharesNewPoly := polyg.Shares(n)
 
 	// Corrupt a few shares
-	shares[2] = nil
-	shares[5] = nil
-	shares[7] = nil
-	shares[8] = nil
+	sharesNewPoly[2] = nil
+	sharesNewPoly[5] = nil
+	sharesNewPoly[7] = nil
+	sharesNewPoly[8] = nil
 
-	recovered, err := RecoverSecret(g, shares, t, n)
+	recovered, err := RecoverSecret(g, sharesNewPoly, t, n)
 	if err != nil {
 		test.Fatal(err)
 	}
 
-	if !recovered.Equal(poly.Secret()) {
+	if !recovered.Equal(polyg.Secret()) {
 		test.Fatal("recovered secret does not match initial value")
 	}
 }
@@ -60,17 +68,24 @@ func TestSecretRecoveryDeleteFail(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 
-	poly := NewPriPoly(g, t, nil)
-	shares := poly.Shares(n)
+	poly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	polyh := NewPriPoly(g,t,nil)
+	polyg, errAdd := poly.Add(polyh)
+
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
+	//shares := poly.Shares(n)
+	sharesNewPoly := polyg.Shares(n)
 
 	// Corrupt one more share than acceptable
-	shares[1] = nil
-	shares[2] = nil
-	shares[5] = nil
-	shares[7] = nil
-	shares[8] = nil
+	sharesNewPoly[1] = nil
+	sharesNewPoly[2] = nil
+	sharesNewPoly[5] = nil
+	sharesNewPoly[7] = nil
+	sharesNewPoly[8] = nil
 
-	_, err := RecoverSecret(g, shares, t, n)
+	_, err := RecoverSecret(g, sharesNewPoly, t, n)
 	if err == nil {
 		test.Fatal("recovered secret unexpectably")
 	}
@@ -101,12 +116,19 @@ func TestPublicCheck(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 
-	priPoly := NewPriPoly(g, t, nil)
-	priShares := priPoly.Shares(n)
-	pubPoly := priPoly.Commit(nil)
+	priPoly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	//priShares := priPoly.Shares(n)
+	priPolyh := NewPriPoly(g,t,nil)
+	priPolyg, errAdd := priPoly.Add(priPolyh)
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
+	priSharesNew := priPolyg.Shares(n)
+	//pubPoly := priPoly.Commit(nil)
+	pubPolynew := priPolyg.Commit(g.Point().Pick(g.RandomStream()))
 
-	for i, share := range priShares {
-		if !pubPoly.Check(share) {
+	for i, share := range priSharesNew {
+		if !pubPolynew.Check(share) {
 			test.Fatalf("private share %v not valid with respect to the public commitment polynomial", i)
 		}
 	}
@@ -117,9 +139,15 @@ func TestPublicRecovery(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 
-	priPoly := NewPriPoly(g, t, nil)
-	pubPoly := priPoly.Commit(nil)
-	pubShares := pubPoly.Shares(n)
+	priPoly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream())) //f()
+	priPolyh := NewPriPoly(g,t,nil)
+	priPolyg, errAdd := priPoly.Add(priPolyh)
+	pubPoly := priPolyg.Commit(g.Point().Pick(g.RandomStream())) // F()
+	pubShares := pubPoly.Shares(n) //F(i)
+
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
 
 	recovered, err := RecoverCommit(g, pubShares, t, n)
 	if err != nil {
@@ -136,9 +164,15 @@ func TestPublicRecoveryDelete(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 
-	priPoly := NewPriPoly(g, t, nil)
-	pubPoly := priPoly.Commit(nil)
-	shares := pubPoly.Shares(n)
+	priPoly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	priPolyh := NewPriPoly(g,t,nil)
+	priPolyg, errAdd := priPoly.Add(priPolyh)
+	pubPoly := priPolyg.Commit(g.Point().Pick(g.RandomStream()))
+	shares  := pubPoly.Shares(n)
+
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
 
 	// Corrupt a few shares
 	shares[2] = nil
@@ -161,9 +195,15 @@ func TestPublicRecoveryDeleteFail(test *testing.T) {
 	n := 10
 	t := n/2 + 1
 
-	priPoly := NewPriPoly(g, t, nil)
-	pubPoly := priPoly.Commit(nil)
+	priPoly := NewPriPoly(g, t, g.Scalar().Pick(g.RandomStream()))
+	priPolyh := NewPriPoly(g,t,nil)
+	priPolyg, errAdd := priPoly.Add(priPolyh)
+	pubPoly := priPolyg.Commit(g.Point().Pick(g.RandomStream()))
 	shares := pubPoly.Shares(n)
+
+	if errAdd != nil{
+		test.Fatal(errAdd)
+	}
 
 	// Corrupt one more share than acceptable
 	shares[1] = nil
