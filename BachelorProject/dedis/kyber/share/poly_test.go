@@ -6,7 +6,7 @@ import (
 	"github.com/dedis/kyber/group/edwards25519"
 	"github.com/stretchr/testify/assert"
 	"github.com/dedis/kyber"
-	"fmt"
+	//"fmt"
 	//"errors"
 )
 
@@ -21,6 +21,7 @@ func TestSecretRecovery(test *testing.T) {
 	if errAdd != nil{
 		test.Fatal(errAdd)
 	}
+	
 
 	sharesNewPoly := polyg.Shares(n)
 
@@ -414,3 +415,39 @@ func (p *PriShare) AddShares(q *PriShare, suite Suite) (*PriShare){
 	return nil
 }
 
+func TestPublicCheckDKG(test *testing.T) {
+	g := edwards25519.NewBlakeSHA256Ed25519()
+	n := 10
+	t := n/2 + 1
+
+	poly := PriPolys(n, g, t)
+	coeffs := make([]kyber.Scalar, t)
+	for i := 0; i < t; i++ {
+		coeffs[i] = g.Scalar().Zero()
+	}
+	p := &PriPoly{s: g, coeffs: coeffs}
+	for i:= 0; i < n; i++ {
+		p, _ = p.Add(poly[i])			//ftot(x)
+	}
+
+	pubPoly := p.Commit(g.Point().Pick(g.RandomStream())) //Ftot
+
+	sharesMat := make([][]*PriShare, n) //matrices des shares
+	sumshare := make([]*PriShare, n) //list des shares_tot
+	for i := 0; i < n; i++ {
+		sharesMat[i] = poly[i].Shares(n)
+	}
+	for j := 0; j < n; j++ {
+		sum := &PriShare{j, g.Scalar().Zero()}
+		for i:= 0; i < n ; i++ {
+			sum = sum.AddShares(sharesMat[i][j], g)
+		}
+		sumshare[j] = sum
+	}
+	for i, share := range sumshare {
+		if !pubPoly.Check(share) {
+			test.Fatalf("private share %v not valid with respect to the public commitment polynomial", i)
+		}
+	}
+
+}
