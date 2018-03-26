@@ -5,6 +5,9 @@ import (
 
 	"github.com/dedis/kyber/group/edwards25519"
 	"github.com/stretchr/testify/assert"
+	"github.com/dedis/kyber"
+	"fmt"
+	//"errors"
 )
 
 func TestSecretRecovery(test *testing.T) {
@@ -350,3 +353,64 @@ func TestRecoverPriPoly(test *testing.T) {
 		assert.Equal(test, reverseRecovered.Eval(i).V.String(), a.Eval(i).V.String())
 	}
 }
+
+//========================================================================== KOPIGA VERSION ========================================================================
+
+func TestSecretRecoveryDKG(test *testing.T) {
+	g := edwards25519.NewBlakeSHA256Ed25519()
+	n := 10
+	t := n/2 + 1
+
+	poly := PriPolys(n, g, t) //tableau avec les polynomials secrets
+
+	sharesMat := make([][]*PriShare, n)
+
+	for i := 0; i < n; i++ {
+		sharesMat[i] = poly[i].Shares(n)
+	}
+
+	sumshare := make([]*PriShare, n) //list des shares
+	for j := 0; j < n; j++ {
+		sum := &PriShare{j, g.Scalar().Zero()}
+		for i:= 0; i < n ; i++ {
+			sum = sum.AddShares(sharesMat[i][j], g)
+		}
+		sumshare[j] = sum
+	}
+
+	// totShares are computed. Now using these shares we can recover the coefficients of ftot
+
+	coeffs := make([]kyber.Scalar, t)
+	for i := 0; i < t; i++ {
+		coeffs[i] = g.Scalar().Zero()
+	}
+	p := &PriPoly{s: g, coeffs: coeffs}
+	for i:= 0; i < n; i++ {
+		p, _ = p.Add(poly[i])			//ftot(x)
+	}
+
+	// the last coeff of ftot(x) must correspond to the last coeff of the intrapolated function
+	recovered, err := RecoverSecret(g, sumshare, t, n)
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	if !recovered.Equal(p.Secret()) {
+		test.Fatal("recovered secret does not match initial value")
+	}
+
+}
+
+func PriPolys(n int, s Suite, t int) []*PriPoly {
+	privatePolys := make([]*PriPoly, n)
+	for i := range privatePolys {
+		privatePolys[i] = NewPriPoly(s, t, s.Scalar().Pick(s.RandomStream()))
+	}
+	return privatePolys
+}
+
+func (p *PriShare) AddShares(q *PriShare, suite Suite) (*PriShare){
+	if(p.I==q.I) {return &PriShare{p.I, suite.Scalar().Add(p.V,q.V)}}
+	return nil
+}
+
