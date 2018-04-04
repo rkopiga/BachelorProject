@@ -308,7 +308,7 @@ func TestDistKeyShareReNew(t *testing.T){
 	for i, dkg := range dkgs{
 		dks,_ := dkg.DistKeyShare()
 		dksReNew,_:= dkgsReNew[i].DistKeyShare()
-		dkss[i],_ = dkg.AddShare(dks,dksReNew)
+		dkss[i],_ = dks.Renew(dksReNew,dkg.suite)
 	}
 
 	shares := make([]*share.PriShare, nbParticipants)
@@ -324,14 +324,13 @@ func TestDistKeyShareReNew(t *testing.T){
 
 func TestReNewDistKeyGenerator(t *testing.T) {
 	long := partSec[0]
-	dkg, _ := NewDistKeyGenerator(suite, long, partPubs, nbParticipants/2+1)
-	dkgNew, err := dkg.reNewDistKeyGenerator()
+	dkgNew, err := ResharingDKG(suite,long,partPubs,nbParticipants/2+1)
 	assert.Nil(t, err)
 	assert.NotNil(t, dkgNew.dealer)
 
 }
 
-func TestDistKeyShare_AddShare(t *testing.T) {
+func TestDistKeyShare_Renew(t *testing.T) {
 	fullExchange(t)
 	fullExchangeWithRenewal(t)
 	dkg := dkgs[2]
@@ -340,21 +339,21 @@ func TestDistKeyShare_AddShare(t *testing.T) {
 	//Check when they don't have the same index
 	dkg1 := dkgsReNew[1]
 	dks1, _ := dkg1.DistKeyShare()
-	newDsk1, err := dkg.AddShare(dks,dks1)
+	newDsk1, err := dks.Renew(dks1,dkg.suite)
 	assert.Nil(t,newDsk1)
 	assert.Error(t,err)
 
 	//Check the last coeff is not 0 in g(x)
 	dkg3 := dkgs[1]
 	dks3,_ := dkg3.DistKeyShare()
-	newDsk3, err3 := dkg.AddShare(dks,dks3)
+	newDsk3, err3 := dks.Renew(dks3,dkg.suite)
 	assert.Nil(t,newDsk3)
 	assert.Error(t,err3)
 
 	//Finally, check whether it works
 	dkg2 := dkgsReNew[2]
 	dks2, _:= dkg2.DistKeyShare()
-	newDks,err := dkg.AddShare(dks,dks2)
+	newDks,err := dks.Renew(dks2,dkg.suite)
 	assert.Nil(t,err)
 	assert.NotNil(t,newDks)
 
@@ -364,8 +363,8 @@ func TestDistKeyShare_AddShare(t *testing.T) {
 func reNewDkgGen() []*DistKeyGenerator{
 
 	dkgsNew := make([]*DistKeyGenerator, nbParticipants)
-	for i, dkg := range dkgs {
-		dkgNew, err := dkg.reNewDistKeyGenerator()
+	for i := 0; i < nbParticipants ; i++ {
+		dkgNew, err := ResharingDKG(suite,partSec[i],partPubs,nbParticipants/2+1)
 		if err != nil {
 			panic(err)
 		}
