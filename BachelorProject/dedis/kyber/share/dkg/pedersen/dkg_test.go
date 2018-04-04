@@ -20,6 +20,7 @@ var partPubs []kyber.Point
 var partSec []kyber.Scalar
 
 var dkgs []*DistKeyGenerator
+var dkgsReNew []*DistKeyGenerator
 
 func init() {
 	partPubs = make([]kyber.Point, nbParticipants)
@@ -30,6 +31,7 @@ func init() {
 		partSec[i] = sec
 	}
 	dkgs = dkgGen()
+
 }
 
 func TestDKGNewDistKeyGenerator(t *testing.T) {
@@ -48,7 +50,7 @@ func TestDKGDeal(t *testing.T) {
 	dkg := dkgs[0]
 
 	dks, err := dkg.DistKeyShare()
-	assert.Error(t, err)
+	assert.Error(t, err)  //dks not certified.
 	assert.Nil(t, dks)
 
 	deals, err := dkg.Deals()
@@ -278,7 +280,7 @@ func TestDistKeyShare(t *testing.T) {
 	// verify integrity of shares etc
 	dkss := make([]*DistKeyShare, nbParticipants)
 	for i, dkg := range dkgs {
-		dks, err := dkg.DistKeyShare()
+		dks, err := dkg.DistKeyShare()  //DKS of node i.
 		require.Nil(t, err)
 		require.NotNil(t, dks)
 		dkss[i] = dks
@@ -287,16 +289,91 @@ func TestDistKeyShare(t *testing.T) {
 
 	shares := make([]*share.PriShare, nbParticipants)
 	for i, dks := range dkss {
-		assert.True(t, checkDks(dks, dkss[0]), "dist key share not equal %d vs %d", dks.Share.I, 0)
+		assert.True(t, checkDks(dks, dkss[0]), "dist key share not equal %d vs %d", dks.Share.I, 0) //Everybody must have the same commits
 		shares[i] = dks.Share
 	}
 
-	secret, err := share.RecoverSecret(suite, shares, nbParticipants, nbParticipants)
+	secret, err := share.RecoverSecret(suite, shares, nbParticipants, nbParticipants) // SUMf_j(0),j:0->#participants-
 	assert.Nil(t, err)
 
 	commitSecret := suite.Point().Mul(secret, nil)
 	assert.Equal(t, dkss[0].Public().String(), commitSecret.String())
 }
+//========================================================================== KOPIGA VERSION========================================================================================
+func TestDistKeyShareReNew(t *testing.T){
+	fullExchange(t)
+	fullExchangeWithRenewal(t)
+
+	dkss := make([]*DistKeyShare, nbParticipants)
+	for i, dkg := range dkgs{
+		dks,_ := dkg.DistKeyShare()
+		dksReNew,_:= dkgsReNew[i].DistKeyShare()
+		dkss[i],_ = dkg.AddShare(dks,dksReNew)
+	}
+
+	shares := make([]*share.PriShare, nbParticipants)
+	for i, dks := range dkss {
+		shares[i] = dks.Share
+	}
+	secret, err := share.RecoverSecret(suite, shares, nbParticipants, nbParticipants) // SUMf_j(0),j:0->#participants-
+	assert.Nil(t, err)
+
+	commitSecret := suite.Point().Mul(secret, nil)
+	assert.Equal(t, dkss[0].Public().String(), commitSecret.String())
+}
+
+func TestReNewDistKeyGenerator(t *testing.T) {
+	long := partSec[0]
+	dkg, _ := NewDistKeyGenerator(suite, long, partPubs, nbParticipants/2+1)
+	dkgNew, err := dkg.reNewDistKeyGenerator()
+	assert.Nil(t, err)
+	assert.NotNil(t, dkgNew.dealer)
+
+}
+
+func TestDistKeyShare_AddShare(t *testing.T) {
+	fullExchange(t)
+	fullExchangeWithRenewal(t)
+	dkg := dkgs[2]
+	dks,_ := dkg.DistKeyShare()
+
+	//Check when they don't have the same index
+	dkg1 := dkgsReNew[1]
+	dks1, _ := dkg1.DistKeyShare()
+	newDsk1, err := dkg.AddShare(dks,dks1)
+	assert.Nil(t,newDsk1)
+	assert.Error(t,err)
+
+	//Check the last coeff is not 0 in g(x)
+	dkg3 := dkgs[1]
+	dks3,_ := dkg3.DistKeyShare()
+	newDsk3, err3 := dkg.AddShare(dks,dks3)
+	assert.Nil(t,newDsk3)
+	assert.Error(t,err3)
+
+	//Finally, check whether it works
+	dkg2 := dkgsReNew[2]
+	dks2, _:= dkg2.DistKeyShare()
+	newDks,err := dkg.AddShare(dks,dks2)
+	assert.Nil(t,err)
+	assert.NotNil(t,newDks)
+
+}
+
+
+func reNewDkgGen() []*DistKeyGenerator{
+
+	dkgsNew := make([]*DistKeyGenerator, nbParticipants)
+	for i, dkg := range dkgs {
+		dkgNew, err := dkg.reNewDistKeyGenerator()
+		if err != nil {
+			panic(err)
+		}
+		dkgsNew[i] = dkgNew
+	}
+	return dkgsNew
+}
+//========================================================================================================================================================
 
 func dkgGen() []*DistKeyGenerator {
 	dkgs := make([]*DistKeyGenerator, nbParticipants)
@@ -333,15 +410,15 @@ func checkDks(dks1, dks2 *DistKeyShare) bool {
 }
 
 func fullExchange(t *testing.T) {
-	dkgs = dkgGen()
+	dkgs = dkgGen()                         // n DKGs
 	// full secret sharing exchange
 	// 1. broadcast deals
 	resps := make([]*Response, 0, nbParticipants*nbParticipants)
-	for _, dkg := range dkgs {
-		deals, err := dkg.Deals()
+	for _, dkg := range dkgs {			// for each DKG d
+		deals, err := dkg.Deals()		// deals that dealer j created
 		require.Nil(t, err)
-		for i, d := range deals {
-			resp, err := dkgs[i].ProcessDeal(d)
+		for i, d := range deals {					// for each deal:
+			resp, err := dkgs[i].ProcessDeal(d) 	// creates verifiers to verifier the deals.
 			require.Nil(t, err)
 			require.Equal(t, vss.StatusApproval, resp.Response.Status)
 			resps = append(resps, resp)
@@ -364,6 +441,33 @@ func fullExchange(t *testing.T) {
 	for _, dkg := range dkgs {
 		for _, dkg2 := range dkgs {
 			require.True(t, dkg.isInQUAL(dkg2.index))
+		}
+	}
+
+}
+
+func fullExchangeWithRenewal(t *testing.T) {
+	dkgsReNew = reNewDkgGen()
+	// full secret sharing exchange
+	// 1. broadcast deals
+	resps := make([]*Response, 0, nbParticipants*nbParticipants)
+	for _, dkg := range dkgsReNew {
+		deals, _ := dkg.Deals()
+		for i, d := range deals {
+			resp, _ := dkgsReNew[i].ProcessDeal(d)
+			resps = append(resps, resp)
+		}
+	}
+	// 2. Broadcast responses
+	for _, resp := range resps {
+		for _, dkg := range dkgsReNew {
+			// Ignore messages about ourselves
+			if resp.Response.Index == dkg.index {
+				continue
+			}
+			j, _ := dkg.ProcessResponse(resp)
+			//require.Nil(t, err)
+			require.Nil(t, j)
 		}
 	}
 
