@@ -123,22 +123,39 @@ func NewDistKeyGenerator(suite Suite, longterm kyber.Scalar, participants []kybe
 
 // ==================================================================================== KOPIGA VERSION =============================================================
 
-func (d *DistKeyGenerator) reNewDistKeyGenerator() (*DistKeyGenerator,error){
-	ownSec := d.suite.Scalar().Zero()
-	dealer, err := vss.NewDealer(d.suite,d.long,ownSec,d.participants,d.t)
-	if err != nil{
+func ResharingDKG(suite Suite, longterm kyber.Scalar, participants []kyber.Point, t int) (*DistKeyGenerator, error){
+	pub := suite.Point().Mul(longterm, nil)
+	// find our index
+	var found bool
+	var index uint32
+	for i, p := range participants {
+		if p.Equal(pub) {
+			found = true
+			index = uint32(i)
+			break
+		}
+	}
+	if !found {
+		return nil, errors.New("dkg: own public key not found in list of participants")
+	}
+	var err error
+	// generate our dealer / deal
+	ownSec := suite.Scalar().Zero() //THIS HAS TO BE 0
+	dealer, err := vss.NewDealer(suite, longterm, ownSec, participants, t)
+	if err != nil {
 		return nil, err
 	}
+
 	return &DistKeyGenerator{
 		dealer:       dealer,
 		verifiers:    make(map[uint32]*vss.Verifier),
-		t        :    d.t,
-		suite:        d.suite,
-		long:         d.long,
-		pub:          d.pub,
-		participants: d.participants,
-		index:d.index,
-	},nil
+		t:            t,
+		suite:        suite,
+		long:         longterm,
+		pub:          pub,
+		participants: participants,
+		index:        index,
+	}, nil
 }
 
 	//====================================================================================================================================================================
@@ -369,9 +386,9 @@ func (d *DistKeyGenerator) DistKeyShare() (*DistKeyShare, error) {
 
 //====================================================================== Kopiga Version ==========================================================
 
-func (d *DistKeyGenerator) AddShare(f *DistKeyShare, g *DistKeyShare) (*DistKeyShare, error){
+func (f *DistKeyShare) Renew(g *DistKeyShare, suite Suite) (*DistKeyShare, error){
 	//Check G(0) = 0*G.
-	if !g.Public().Equal(d.suite.Point().Base().Mul(d.suite.Scalar().Zero(),nil)){
+	if !g.Public().Equal(suite.Point().Base().Mul(suite.Scalar().Zero(),nil)){
 		return nil, errors.New("G(0) != 0*G, wrong renewal function!")
 	}
 
@@ -380,10 +397,10 @@ func (d *DistKeyGenerator) AddShare(f *DistKeyShare, g *DistKeyShare) (*DistKeyS
 		return  nil, errors.New("Not the same party!")
 	}
 
-	newShare := d.suite.Scalar().Add(f.Share.V,g.Share.V)
+	newShare := suite.Scalar().Add(f.Share.V,g.Share.V)
 	newCommits := make([]kyber.Point, len(f.Commits))
 	for i := range newCommits {
-		newCommits[i] =d.suite.Point().Add(f.Commits[i], g.Commits[i])
+		newCommits[i] = suite.Point().Add(f.Commits[i], g.Commits[i])
 	}
 	return &DistKeyShare{
 		Commits:newCommits,
