@@ -377,8 +377,8 @@ func (p *PubPoly) Equal(q *PubPoly) bool {
 
 // Check a private share against a public commitment polynomial.
 func (p *PubPoly) Check(s *PriShare) bool {
-	pv := p.Eval(s.I)
-	ps := p.g.Point().Mul(s.V, p.b)
+	pv := p.Eval(s.I) //F(i)
+	ps := p.g.Point().Mul(s.V, p.b)  //si*F.g
 	return pv.V.Equal(ps)
 }
 
